@@ -10,7 +10,7 @@ import viser.transforms as vt
 from jaxtyping import Float32
 
 from ._renderer import Renderer, RenderTask
-from .render_panel import RenderTabState, populate_general_render_tab
+from submodules.nerfview.nerfview.render_panel import RenderTabState, populate_general_render_tab
 
 
 @dataclasses.dataclass
@@ -18,6 +18,11 @@ class CameraState(object):
     fov: float
     aspect: float
     c2w: Float32[np.ndarray, "4 4"]
+    position: float
+    look_at:float
+    up_direction:float
+    image_width: int
+    image_height: int
 
     def get_K(self, img_wh: Tuple[int, int]) -> Float32[np.ndarray, "3 3"]:
         W, H = img_wh
@@ -66,8 +71,10 @@ class Viewer(object):
         render_fn: Callable,
         output_dir: Optional[Path] = None,
         mode: Literal["rendering", "training"] = "rendering",
+        big_scene_flag: bool = False,  # 添加 big_scene_flag 参数
     ):
         # Public states.
+        self.big_scene_flag = big_scene_flag
         self.server = server
         self.render_fn = render_fn
         self.mode = mode
@@ -85,12 +92,12 @@ class Viewer(object):
         server.scene.set_global_visibility(True)
         server.on_client_disconnect(self._disconnect_client)
         server.on_client_connect(self._connect_client)
-        server.gui.set_panel_label("basic viewer")
-        server.gui.configure_theme(
-            control_layout="collapsible",
-            dark_mode=True,
-            brand_color=(255, 211, 105),
-        )
+        # server.gui.set_panel_label("basic viewer")
+        # server.gui.configure_theme(
+        #     control_layout="collapsible",
+        #     dark_mode=True,
+        #     brand_color=(255, 211, 105),
+        # )
         if self.mode == "training":
             self._init_training_tab()
             self._populate_training_tab()
@@ -149,41 +156,41 @@ class Viewer(object):
         # Allow subclasses to override for custom rendering table
         self.render_tab_state = RenderTabState()
         self._rendering_tab_handles = {}
-        self._rendering_folder = self.server.gui.add_folder("Rendering")
+        # self._rendering_folder = self.server.gui.add_folder("Rendering")
 
     def _populate_rendering_tab(self):
         # Allow subclasses to override for custom rendering table
-        assert self.render_tab_state is not None, "Render tab state is not initialized"
-        assert self._rendering_folder is not None, "Rendering folder is not initialized"
-        with self._rendering_folder:
-            viewer_res_slider = self.server.gui.add_slider(
-                "Viewer Res",
-                min=64,
-                max=2048,
-                step=1,
-                initial_value=2048,
-                hint="Maximum resolution of the viewer rendered image.",
-            )
-
-            @viewer_res_slider.on_update
-            def _(_) -> None:
-                self.render_tab_state.viewer_res = int(viewer_res_slider.value)
-                self.rerender(_)
-
-            self._rendering_tab_handles["viewer_res_slider"] = viewer_res_slider
+        # assert self.render_tab_state is not None, "Render tab state is not initialized"
+        # assert self._rendering_folder is not None, "Rendering folder is not initialized"
+        # with self._rendering_folder:
+        #     viewer_res_slider = self.server.gui.add_slider(
+        #         "Viewer Res",
+        #         min=64,
+        #         max=2048,
+        #         step=1,
+        #         initial_value=2048,
+        #         hint="Maximum resolution of the viewer rendered image.",
+        #     )
+        #
+        #     @viewer_res_slider.on_update
+        #     def _(_) -> None:
+        #         self.render_tab_state.viewer_res = int(viewer_res_slider.value)
+        #         self.rerender(_)
+        #
+        #     self._rendering_tab_handles["viewer_res_slider"] = viewer_res_slider
 
         # training tab handles should also be disabled during dumping video.
         extra_handles = self._rendering_tab_handles.copy()
         if self.mode == "training":
             extra_handles.update(self._training_tab_handles)
-        handles = populate_general_render_tab(
-            self.server,
-            output_dir=self.output_dir,
-            folder=self._rendering_folder,
-            render_tab_state=self.render_tab_state,
-            extra_handles=extra_handles,
-        )
-        self._rendering_tab_handles.update(handles)
+        # handles = populate_general_render_tab(
+        #     self.server,
+        #     output_dir=self.output_dir,
+        #     folder=self._rendering_folder,
+        #     render_tab_state=self.render_tab_state,
+        #     extra_handles=extra_handles,
+        # )
+        # self._rendering_tab_handles.update(handles)
 
     def rerender(self, _):
         clients = self.server.get_clients()
@@ -197,12 +204,21 @@ class Viewer(object):
         self._renderers[client_id].running = False
         self._renderers.pop(client_id)
 
+    def set_big_scene_flag(self, flag: bool):
+        """更新 big_scene_flag 并通知所有渲染器"""
+        self.big_scene_flag = flag
+        for renderer in self._renderers.values():
+            renderer.big_scene_flag = flag
+
     def _connect_client(self, client: viser.ClientHandle):
+        client.camera.position = (0.0, 0.0, 10.0)  # -20 20 25
+        client.camera.look_at = (0.0, 0.0, 0.0)
         client_id = client.client_id
         self._renderers[client_id] = Renderer(
-            viewer=self, client=client, lock=self.lock
+            viewer=self, client=client, lock=self.lock,big_scene_flag=self.big_scene_flag
         )
         self._renderers[client_id].start()
+        # print(self._renderers,self._renderers[client_id])
 
         @client.camera.on_update
         def _(_: viser.CameraHandle):
@@ -223,9 +239,16 @@ class Viewer(object):
             0,
         )
         return CameraState(
-            fov=camera.fov,
+            # fov=camera.fov,
+            fov=0.1,
             aspect=camera.aspect,
             c2w=c2w,
+            position=camera.position,
+            look_at=camera.look_at,
+            up_direction=camera.up_direction,
+            image_height=camera.image_height,
+            image_width=camera.image_width,
+
         )
 
     def update(self, step: int, num_train_rays_per_step: int):

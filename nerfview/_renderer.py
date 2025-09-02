@@ -49,12 +49,14 @@ class Renderer(threading.Thread):
         viewer: "Viewer",
         client: viser.ClientHandle,
         lock: threading.Lock,
+        big_scene_flag: bool,
     ):
         super().__init__(daemon=True)
 
         self.viewer = viewer
         self.client = client
         self.lock = lock
+        self.big_scene_flag = big_scene_flag  # 保存参数
 
         self.running = True
         self.is_prepared_fn = lambda: self.viewer.state != "preparing"
@@ -73,6 +75,7 @@ class Renderer(threading.Thread):
         transitions: dict[RenderState, dict[RenderAction, RenderState]] = {
             s: {a: s for a in get_args(RenderAction)} for s in get_args(RenderState)
         }
+        # print(transitions)
         transitions["low_move"]["static"] = "low_static"
         transitions["low_static"]["static"] = "high"
         transitions["low_static"]["update"] = "high"
@@ -88,29 +91,32 @@ class Renderer(threading.Thread):
                 raise InterruptRenderException
         return self._may_interrupt_trace
 
+
     def _get_img_wh(self, aspect: float) -> Tuple[int, int]:
-        # we always trade off speed for quality
-        max_img_res = self.viewer.render_tab_state.viewer_res
-        # if self._state in ["high"]:
-        H = max_img_res
-        W = int(H * aspect)
-        if W > max_img_res:
-            W = max_img_res
-            H = int(W / aspect)
-        # elif self._state in ["low_move", "low_static"]:
-        #     num_view_rays_per_sec = self.viewer.render_tab_state.num_view_rays_per_sec
-        #     target_fps = self._target_fps
-        #     num_viewer_rays = num_view_rays_per_sec / target_fps
-        #     H = (num_viewer_rays / aspect) ** 0.5
-        #     H = int(round(H, -1))
-        #     H = max(min(max_img_res, H), 30)
-        #     W = int(H * aspect)
-        #     if W > max_img_res:
-        #         W = max_img_res
-        #         H = int(W / aspect)
-        # else:
-        #     raise ValueError(f"Unknown state: {self._state}.")
-        return W, H
+        return 1920, 927
+    # def _get_img_wh(self, aspect: float) -> Tuple[int, int]:
+    #     # we always trade off speed for quality
+    #     max_img_res = self.viewer.render_tab_state.viewer_res
+    #     # if self._state in ["high"]:
+    #     H = max_img_res
+    #     W = int(H * aspect)
+    #     if W > max_img_res:
+    #         W = max_img_res
+    #         H = int(W / aspect)
+    #     # elif self._state in ["low_move", "low_static"]:
+    #     #     num_view_rays_per_sec = self.viewer.render_tab_state.num_view_rays_per_sec
+    #     #     target_fps = self._target_fps
+    #     #     num_viewer_rays = num_view_rays_per_sec / target_fps
+    #     #     H = (num_viewer_rays / aspect) ** 0.5
+    #     #     H = int(round(H, -1))
+    #     #     H = max(min(max_img_res, H), 30)
+    #     #     W = int(H * aspect)
+    #     #     if W > max_img_res:
+    #     #         W = max_img_res
+    #     #         H = int(W / aspect)
+    #     # else:
+    #     #     raise ValueError(f"Unknown state: {self._state}.")
+    #     return W, H
 
     def submit(self, task: RenderTask):
         if self._task is None:
@@ -130,14 +136,22 @@ class Renderer(threading.Thread):
         while self.running:
             while not self.is_prepared_fn():
                 time.sleep(0.1)
-            if not self._render_event.wait(0.2):
-                self.submit(
-                    RenderTask("static", self.viewer.get_camera_state(self.client))
-                )
+            if not self._render_event.wait(0.01):
+                if  self.big_scene_flag:
+                    # print('static')
+                    self.submit(
+                        RenderTask("static", self.viewer.get_camera_state(self.client))
+                    # RenderTask("update", self.viewer.get_camera_state(self.client))#重要，确保实时交互
+                    )
+                else:
+                    # print('RenderTask("update", self.viewer.get_camera_state(self.client))#重要，确保实时交互')
+                    self.submit(
+                        RenderTask("update", self.viewer.get_camera_state(self.client))#重要，确保实时交互
+                    )
             self._render_event.clear()
             task = self._task
             assert task is not None
-            #  print(self._state, task.action, self.transitions[self._state][task.action])
+            # print(self._state, task.action, self.transitions[self._state][task.action])
             if self._state == "high" and task.action == "static":
                 continue
             self._state = self.transitions[self._state][task.action]
@@ -181,6 +195,6 @@ class Renderer(threading.Thread):
             self.client.scene.set_background_image(
                 img,
                 format="jpeg",
-                jpeg_quality=70 if task.action in ["static", "update"] else 40,
+                jpeg_quality=100 if task.action in ["static", "update"] else 100,
                 depth=depth,
             )

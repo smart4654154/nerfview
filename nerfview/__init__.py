@@ -1,4 +1,4 @@
-from .render_panel import (
+from submodules.nerfview.nerfview.render_panel import (
     CameraPath,
     Colormaps,
     Keyframe,
