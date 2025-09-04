@@ -10,14 +10,14 @@ class Renderer(threading.Thread):
         viewer: "Viewer",
         client: viser.ClientHandle,
         lock: threading.Lock,
-        big_scene_flag: bool,#新参数
+        render_task_state: str,#新参数
     ):
         super().__init__(daemon=True)
 
         self.viewer = viewer
         self.client = client
         self.lock = lock
-        self.big_scene_flag = big_scene_flag  # 新参数
+        self.render_task_state = render_task_state  # 保存参数
 ```
 重写函数
 ```
@@ -29,18 +29,23 @@ class Renderer(threading.Thread):
                     RenderTask("static", self.viewer.get_camera_state(self.client))
                 )如下修改
 ```
-                time.sleep(0.01)
-            if not self._render_event.wait(0.01):
-              if  self.big_scene_flag:
+                time.sleep(0.1)
+            if not self._render_event.wait(0.2):
+                if  self.render_task_state=='static':
                     # print('static')
                     self.submit(
                         RenderTask("static", self.viewer.get_camera_state(self.client))
                     # RenderTask("update", self.viewer.get_camera_state(self.client))
                     )
-                else:
+                elif self.render_task_state=='unpdate':
                     self.submit(
                         RenderTask("update", self.viewer.get_camera_state(self.client))#重要，确保实时交互,点击后可以绘制点
                     )
+                else:
+                    # print('RenderTask("update", self.viewer.get_camera_state(self.client))#重要，确保实时交互')
+                    self.submit(
+                        RenderTask("update", self.viewer.get_camera_state(self.client))  # 重要，确保实时交互
+                    )                
 ```
 对于run函数的最后返回的图像质量设置成100
 ```
@@ -75,10 +80,10 @@ class Viewer(object):新增参数
         render_fn: Callable,
         output_dir: Optional[Path] = None,
         mode: Literal["rendering", "training"] = "rendering",
-        big_scene_flag: bool = False,  # 添加 big_scene_flag 参数
+        render_task_state: str = 'static',  # 添加参数
     ):
         # Public states.
-        self.big_scene_flag = big_scene_flag  # 新增参数
+        self.render_task_state = render_task_state        
 ```
 注释以下内容
 ```
@@ -135,11 +140,11 @@ class Viewer(object):新增参数
 ```
 在Viewer类，_connect_client函数前，加新函数
 ```
-   def set_big_scene_flag(self, flag: bool):
-        """更新 big_scene_flag 并通知所有渲染器"""
-        self.big_scene_flag = flag
+    def set_render_task_state(self, state: bool):
+        """更新并通知所有渲染器"""
+        self.render_task_state = state
         for renderer in self._renderers.values():
-            renderer.big_scene_flag = flag
+            renderer.render_task_state = state
 ```
 
 
@@ -148,7 +153,7 @@ class Viewer(object):新增参数
 新加        client.camera.position = (0.0, 0.0, 5.0)
         client.camera.look_at = (0.0, 0.0, 0.0)
         self._renderers[client_id] = Renderer(
-            viewer=self, client=client, lock=self.lock,big_scene_flag=self.big_scene_flag
+            viewer=self, client=client, lock=self.lock,render_task_state=self.render_task_state
         )
 ```
     def _connect_client(self, client: viser.ClientHandle):
@@ -156,7 +161,7 @@ class Viewer(object):新增参数
         client.camera.look_at = (0.0, 0.0, 0.0)
         client_id = client.client_id
         self._renderers[client_id] = Renderer(
-            viewer=self, client=client, lock=self.lock,big_scene_flag=self.big_scene_flag
+            viewer=self, client=client, lock=self.lock,render_task_state=self.render_task_state
         )
         self._renderers[client_id].start()
 ```

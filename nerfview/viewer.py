@@ -71,10 +71,10 @@ class Viewer(object):
         render_fn: Callable,
         output_dir: Optional[Path] = None,
         mode: Literal["rendering", "training"] = "rendering",
-        big_scene_flag: bool = False,  # 添加 big_scene_flag 参数
+        render_task_state: str = 'static',  # 添加参数
     ):
         # Public states.
-        self.big_scene_flag = big_scene_flag
+        self.render_task_state = render_task_state
         self.server = server
         self.render_fn = render_fn
         self.mode = mode
@@ -204,24 +204,24 @@ class Viewer(object):
         self._renderers[client_id].running = False
         self._renderers.pop(client_id)
 
-    def set_big_scene_flag(self, flag: bool):
-        """更新 big_scene_flag 并通知所有渲染器"""
-        self.big_scene_flag = flag
+    def set_render_task_state(self, state: bool):
+        """更新并通知所有渲染器"""
+        self.render_task_state = state
         for renderer in self._renderers.values():
-            renderer.big_scene_flag = flag
+            renderer.render_task_state = state
 
     def _connect_client(self, client: viser.ClientHandle):
-        client.camera.position = (0.0, 0.0, 10.0)  # -20 20 25
+        client.camera.position = (2.5,2.5, 17.5)  # -20 20 25
         client.camera.look_at = (0.0, 0.0, 0.0)
         client_id = client.client_id
         self._renderers[client_id] = Renderer(
-            viewer=self, client=client, lock=self.lock,big_scene_flag=self.big_scene_flag
+            viewer=self, client=client, lock=self.lock,render_task_state=self.render_task_state
         )
         self._renderers[client_id].start()
         # print(self._renderers,self._renderers[client_id])
 
         @client.camera.on_update
-        def _(_: viser.CameraHandle):
+        def _(_: viser.CameraHandle):  
             self._last_move_time = time.perf_counter()
             with self.server.atomic():
                 camera_state = self.get_camera_state(client)

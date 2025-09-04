@@ -49,14 +49,14 @@ class Renderer(threading.Thread):
         viewer: "Viewer",
         client: viser.ClientHandle,
         lock: threading.Lock,
-        big_scene_flag: bool,
+        render_task_state: str,#新参数
     ):
         super().__init__(daemon=True)
 
         self.viewer = viewer
         self.client = client
         self.lock = lock
-        self.big_scene_flag = big_scene_flag  # 保存参数
+        self.render_task_state = render_task_state  # 保存参数
 
         self.running = True
         self.is_prepared_fn = lambda: self.viewer.state != "preparing"
@@ -136,17 +136,23 @@ class Renderer(threading.Thread):
         while self.running:
             while not self.is_prepared_fn():
                 time.sleep(0.1)
-            if not self._render_event.wait(0.01):
-                if  self.big_scene_flag:
+            if not self._render_event.wait(0.2):
+                # print(self.render_task_state)
+                if  self.render_task_state=='static':
                     # print('static')
                     self.submit(
                         RenderTask("static", self.viewer.get_camera_state(self.client))
                     # RenderTask("update", self.viewer.get_camera_state(self.client))#重要，确保实时交互
                     )
-                else:
+                elif self.render_task_state=='unpdate':
                     # print('RenderTask("update", self.viewer.get_camera_state(self.client))#重要，确保实时交互')
                     self.submit(
                         RenderTask("update", self.viewer.get_camera_state(self.client))#重要，确保实时交互
+                    )
+                else:
+                    # print('RenderTask("update", self.viewer.get_camera_state(self.client))#重要，确保实时交互')
+                    self.submit(
+                        RenderTask("update", self.viewer.get_camera_state(self.client))  # 重要，确保实时交互
                     )
             self._render_event.clear()
             task = self._task
