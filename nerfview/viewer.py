@@ -211,7 +211,7 @@ class Viewer(object):
             renderer.render_task_state = state
 
     def _connect_client(self, client: viser.ClientHandle):
-        client.camera.position = (2.5,2.5, 17.5)  # -20 20 25
+        client.camera.position = (0,0, 5)
         client.camera.look_at = (0.0, 0.0, 0.0)
         client_id = client.client_id
         self._renderers[client_id] = Renderer(
